@@ -1,0 +1,59 @@
+sudo: required
+dist: trusty
+language: ruby
+
+before_install:
+- gem install asciidoctor -v 1.5.2 
+- gem install tilt
+- sudo pip install git+https://github.com/rdhyee/ebooklib.git
+script:
+- VERSION=`ruby -e "require 'yaml'; meta = YAML.load_file('metadata.yaml'); puts meta['_version'];"`
+- git clone https://github.com/gitenberg-dev/asciidoctor-htmlbook.git
+
+- sudo pip install -r asciidoctor-htmlbook/gitberg-machine/requirements.txt
+- asciidoctor -a toc,idprefix=xx_,version=$VERSION -b xhtml5 -T ./asciidoctor-htmlbook/htmlbook-autogen/
+  -d book book.asciidoc -o book.html
+- git clone https://github.com/gitenberg-dev/HTMLBook
+
+# make book.html available to jinja2 environment by putting it into templates
+- cp book.html asciidoctor-htmlbook/gitberg-machine/templates/
+
+- /usr/bin/python asciidoctor-htmlbook/gitberg-machine/machine.py -o . -m metadata.yaml book.html
+- xsltproc -stringparam external.assets.list " " ./HTMLBook/htmlbook-xsl/epub.xsl book.html
+- cp ./HTMLBook/stylesheets/epub/epub.css OEBPS
+- if [ -e cover.jpg ]; then cp cover.jpg OEBPS/cover.jpg; fi
+# look for first images directory and one found, copy over to ./OEBPS
+- find . -name images -type d | head -n 1 | xargs -I {} mv {} ./OEBPS/
+- zip -rX book.epub mimetype
+- zip -rX book.epub OEBPS/ META-INF/
+- if test -d "OEBPS/images/"; then zip -rX book.epub OEBPS/images/ ;fi
+- mv book.epub Treasure-Island.epub
+- ebook-convert Treasure-Island.epub Treasure-Island.mobi
+- xvfb-run ebook-convert Treasure-Island.epub Treasure-Island.pdf
+branches:
+  only:
+  - master
+notifications:
+  webhooks:
+    urls:
+      - https://unglue.it/api/travisci/webhook
+    on_success: always
+    on_failure: never
+    on_start: never
+deploy:
+  skip_cleanup: true
+  provider: releases
+  api_key:
+    secure: lKV1a0//3HQp8B3FbMwdh5rR1UnlDZDmIrhnQrDua43jUwodHIsIKZgvToRglfTshO5laJ6iTiVvDxwbfp1h+NjEMAnvomsApGbOQR3mKdswc3Eg+sji/TsqEq79e7QxQFr2jS53UQIwSgwArrEQVVfAIa/wJix+344Xk62lMZiDo2+QIRa2Meq+kJHuoYDr6+cSOQcTO8exr9nzBSqQZN7HrkRAB9qEbKLRZ6C8THkVks1UqeY4Gl+BerOihaDRfo7IgePogjHvqn5G42p3Srw4R2RZpZm26UAVIYLhShswO/D3qB7z/AGl3CNR2H+8Q73C/jhKdaxHg1Xzw6kfRPUSde9FIQgB2xlVzmOMj9wirk2RQt0+cnCH2SZNr/Hl5S+3inEBZ3i0q03ClFhH+pHcJq+1u1XbLLLvZJl7B98pLiPDDDUrnr5xMkyfG33SWo/p6CMzEjsCVMxeFEB4D5pMxpaZvN0oZ03NiT6XEJuf9QnpNEXHoSdHhG5ovwbjrMPc1Grfog32M/I1GvCOe2ngvWx1lCVozD+UYNvitW69PZXEQXV8PX6NNkOwaDHJo7ajOQjOtneZYq+/fWy240IKUZgOwUM/KARYARqSERT8Ba6SvVNkfHT6H11v4Wk6TV8TipwdP3+CN+GDf+3c+/VlKexJVTj3OR2KHYhUZak=
+  file:
+    - Treasure-Island.epub
+    - Treasure-Island.mobi
+    - Treasure-Island.pdf
+  "on":
+    repo: GITenberg/Treasure-Island_120
+addons:
+  apt:
+    packages:
+    - xsltproc
+    - xvfb
+    - calibre
